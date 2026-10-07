@@ -357,13 +357,19 @@ def test_pause_and_resume(tmp_path):
         ):
             time.sleep(0.02)
 
-        if model.status is TransferStatus.PAUSED:
-            seen = model.transferred_size
-            time.sleep(0.5)
-            assert model.status is TransferStatus.PAUSED
-            assert model.transferred_size == seen  # no bytes moved while paused
-            assert manager.resume(model.id) is True
-            assert model.status is TransferStatus.ACTIVE
+        # The pause must have landed: previously this block was guarded by
+        # `if model.status is PAUSED`, so a pause that never happened made
+        # every assertion below silently skip and the test passed anyway.
+        assert paused["done"], "pause hook never fired during the transfer"
+        assert (
+            model.status is TransferStatus.PAUSED
+        ), f"expected PAUSED, got {model.status}"
+        seen = model.transferred_size
+        time.sleep(0.5)
+        assert model.status is TransferStatus.PAUSED
+        assert model.transferred_size == seen  # no bytes moved while paused
+        assert manager.resume(model.id) is True
+        assert model.status is TransferStatus.ACTIVE
 
         assert manager.wait(model.id, timeout=60)
         assert model.status is TransferStatus.COMPLETED, model.error_message

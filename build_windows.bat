@@ -11,7 +11,7 @@ if errorlevel 1 (
 )
 
 echo [1/4] Installing dependencies...
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt -r requirements-dev.txt
 if errorlevel 1 (
     echo [error] pip install failed.
     exit /b 1
@@ -39,5 +39,5 @@ echo Notes:
 echo   - first launch creates %%APPDATA%%\virusShare (settings, identity,
 echo     trust store, history.db and logs)
 echo   - allow Python/virusShare on Private networks in Windows Firewall
-echo     for UDP %discovery% / TCP transfer traffic
+echo     for UDP 54321 / TCP 54322 transfer traffic
 exit /b 0

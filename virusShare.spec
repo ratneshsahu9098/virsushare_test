@@ -21,7 +21,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 from scripts.make_release_assets import ensure_assets  # noqa: E402
 
-ICON_FILE, VERSION_FILE = ensure_assets(_ROOT)
+ICON_FILE, VERSION_FILE = ensure_assets()
 
 # Qt modules that are never imported by virusShare; excluding them keeps
 # the single-file bundle well below the full PySide6 footprint.
