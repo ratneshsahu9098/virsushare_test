@@ -107,67 +107,136 @@ DEFAULT_SETTINGS = {
 }
 
 def get_app_data_dir() -> Path:
-    """Get the application data directory."""
-    app_data = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    return app_data / APP_NAME
+    """Per-user, non-roaming application data directory.
+
+    ``%LOCALAPPDATA%\\virusShare`` by default.  Deliberately *not* next to the
+    executable: an installed copy lives in ``C:\\Program Files\\virusShare``,
+    which is read-only for normal users, so no database, log, config or lock
+    file is ever written into the install directory (or anywhere the exe
+    happens to be unpacked to).  "Local" rather than "Roaming" because the
+    SQLite history, the identity key and partial transfers are
+    machine-specific and must not follow a user across machines.
+
+    Overridable with ``VIRUSSHARE_DATA_DIR`` (tests, portable installs).
+    """
+    override = os.environ.get("VIRUSSHARE_DATA_DIR")
+    if override:
+        return Path(override)
+    base = os.environ.get("LOCALAPPDATA") or str(
+        Path.home() / "AppData" / "Local"
+    )
+    return Path(base) / APP_NAME
+
+
+def get_data_dir() -> Path:
+    """Database sub-directory (``%LOCALAPPDATA%\\virusShare\\data``)."""
+    return get_app_data_dir() / "data"
+
 
 def get_settings_path() -> Path:
     """Get the settings file path."""
     return get_app_data_dir() / "settings.json"
 
+
 def get_logs_dir() -> Path:
     """Get the logs directory."""
     return get_app_data_dir() / "logs"
+
 
 def get_trust_store_path() -> Path:
     """Get the trusted-device store path."""
     return get_app_data_dir() / "trusted_devices.json"
 
+
 def get_history_db_path() -> Path:
     """Get the SQLite transfer-history database path."""
-    return get_app_data_dir() / "history.db"
+    return get_data_dir() / "history.db"
 
 def get_identity_path() -> Path:
     """Get the long-term identity (certificate + private key) path."""
     return get_app_data_dir() / "identity.pem"
 
+def _relocate(old: Path, new: Path) -> None:
+    """Move directory ``old`` to ``new`` (rename with copy fallback).
+
+    A rename that fails (antivirus lock, transient permissions) must not be
+    swallowed: the caller would see ``new.exists()`` right after and could
+    skip the migration forever, orphaning the legacy identity/trust/history
+    (M29).  Retries cover transient locks; a persistent failure falls back to
+    copying the content.
+    """
+    if not old.is_dir() or new.exists() or old == new:
+        return
+    new.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(4):
+        try:
+            old.rename(new)
+            return
+        except OSError:
+            if attempt == 3:
+                break
+            time.sleep(0.05)
+    try:
+        shutil.copytree(old, new)
+    except OSError:
+        log.exception("data dir migration failed for %s -> %s", old, new)
+        return
+    log.error(
+        "data dir rename failed; copied %s -> %s instead",
+        old,
+        new,
+    )
+
+
 def migrate_legacy_data_dir() -> None:
     """One-time rename of the pre-rebrand data directory (best effort).
 
-    A rename that fails (antivirus lock, transient permissions) must not be
-    swallowed: ``ensure_dirs`` would create the new directory right after and
-    the condition ``not new.exists()`` would then skip migration forever,
-    orphaning the legacy identity/trust/history (M29).  Retries cover
-    transient locks; a persistent failure falls back to copying the content.
+    ``EtherTransfer`` (the old name) is moved next to the *current* data
+    directory, so an upgraded install keeps its identity, trust store and
+    history.  A no-op when either side is missing.
     """
     try:
-        app_data = Path(
-            os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")
-        )
-        old = app_data / LEGACY_APP_NAME
         new = get_app_data_dir()
-        if not old.is_dir() or new.exists():
-            return
-        for attempt in range(4):
-            try:
-                old.rename(new)
-                return
-            except OSError:
-                if attempt == 3:
-                    break
-                time.sleep(0.05)
-        shutil.copytree(old, new)
-        log.error(
-            "legacy data dir rename failed; copied %s -> %s instead",
-            old,
-            new,
-        )
+        old = new.parent / LEGACY_APP_NAME
+        _relocate(old, new)
     except OSError:
         log.exception("legacy data dir migration failed")
+
+
+def migrate_roaming_data_dir() -> None:
+    """One-time move from the old roaming location to ``%LOCALAPPDATA%``.
+
+    Earlier versions stored everything in ``%APPDATA%\\virusShare`` (roaming).
+    The data is machine-specific (identity key, SQLite history, partial
+    transfers), so it is relocated to ``%LOCALAPPDATA%\\virusShare`` once, and
+    the history database is then normalized into the ``data/`` sub-directory
+    that ``get_history_db_path`` expects.  Never touches the destination if it
+    already exists, and is a no-op when source and destination coincide.
+    """
+    try:
+        new = get_app_data_dir()
+        roaming_base = Path(
+            os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")
+        )
+        _relocate(roaming_base / APP_NAME, new)
+        # normalize history.db -> data/history.db (old layout)
+        old_db = new / "history.db"
+        new_db = get_history_db_path()
+        if old_db.is_file() and not new_db.exists():
+            new_db.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                old_db.rename(new_db)
+            except OSError:
+                log.exception("history db move to data/ failed")
+    except OSError:
+        log.exception("roaming data dir migration failed")
+
 
 def ensure_dirs():
     """Ensure all required directories exist."""
     migrate_legacy_data_dir()
+    migrate_roaming_data_dir()
     get_app_data_dir().mkdir(parents=True, exist_ok=True)
+    get_data_dir().mkdir(parents=True, exist_ok=True)
     get_logs_dir().mkdir(parents=True, exist_ok=True)
     Path(DEFAULT_SETTINGS["save_received_files_to"]).mkdir(parents=True, exist_ok=True)

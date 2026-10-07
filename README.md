@@ -5,11 +5,12 @@ broadcast, pair with a one-time code, and move files over an encrypted TCP
 connection — no server, no cloud, no accounts.
 
 **Status: complete.** Full application (protocol, discovery, transfer engine,
-security, history, PySide6 GUI, system tray, PyInstaller packaging) with
-**334 passing unit tests** (1 privilege-dependent skip).
+security, history, PySide6 GUI, system tray) with a Windows installer
+(PyInstaller onedir + Inno Setup) and **434 passing unit tests**
+(1 privilege-dependent skip).
 
 ```
-Python 3.10+   |   Windows-first (%APPDATA%)   |   PySide6 GUI   |   MIT-style deps
+Python 3.10+   |   Windows-first (%LOCALAPPDATA%)   |   PySide6 GUI   |   MIT-style deps
 ```
 
 ---
@@ -58,15 +59,20 @@ Useful flags:
 ### Test
 
 ```powershell
-python -m pytest -q          # 334 passed, 1 skipped
+python -m pytest -q          # 434 passed, 1 skipped (~100 s)
 ```
 
-### Build a Windows executable
+### Build the Windows app + installer
 
 ```powershell
 build_windows.bat
-# -> dist\virusShare.exe   (single file, no console window)
+# -> dist\virusShare\virusShare.exe     app (onedir, no console window)
+# -> dist\virusShare-Setup.exe          installer (Inno Setup)
 ```
+
+Requires Python 3.10+ and [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+(`winget install JRSoftware.InnoSetup`). The script refuses to package a
+build whose tests fail.
 
 ### Send a file between two PCs
 
@@ -121,7 +127,7 @@ build_windows.bat
 ```
 virusShare/                  repository root (run pytest here)
 ├── app.py                   entry point: wiring, CLI args, shutdown
-├── conftest.py              sys.path + QT_QPA_PLATFORM=offscreen
+├── conftest.py              sys.path, QT_QPA_PLATFORM=offscreen, GC guard
 ├── models.py                TransferSession / TransferFile / TransferStatus
 ├── core/
 │   ├── constants.py         ports, magic bytes, message ids, defaults, paths
@@ -158,14 +164,17 @@ virusShare/                  repository root (run pytest here)
 │   ├── tray.py              AppTray (guarded by isSystemTrayAvailable)
 │   ├── styles.py            light/dark/system QSS + palette
 │   └── icons.py             programmatic icons (no binary assets)
-├── assets/                  virusShare.ico + version_info.txt (generated)
+├── resources/
+│   ├── icons/virusShare.ico     branded app icon (generated)
+│   └── version_info.txt         Windows version resource (generated)
 ├── scripts/make_release_assets.py  icon/version-resource generator
 ├── utils/                   logger, network info, Windows helpers, formatting
-├── tests/                   15 test modules, 334 tests
-├── virusShare.spec       PyInstaller build description
-├── build_windows.bat        install deps → test → build
-├── requirements.txt         PySide6, psutil, cryptography, pyinstaller
-└── _exp.py                  protocol framing experiment (throwaway)
+├── tests/                   15 test modules, 435 tests
+├── installer/virusShare.iss Inno Setup script → dist\virusShare-Setup.exe
+├── virusShare.spec       PyInstaller production build (onedir)
+├── virusShare_onefile.spec  portable single-file build (optional)
+├── build_windows.bat        venv → deps → test gate → exe → installer
+└── requirements.txt         PySide6, psutil, cryptography, pyinstaller
 ```
 
 ---
@@ -183,7 +192,7 @@ virusShare/                  repository root (run pytest here)
         │  AppTray              │          ├ DiscoveryService threads    │
         └───────────┬───────────┘          │  ├ announcer  └ listener    │
                     │                      ├ TransferServer accept loop  │
-        SQLite ◄────┼ ────► %APPDATA%      └ TransferClient threads      │
+        SQLite ◄────┼ ────► %LOCALAPPDATA% └ TransferClient threads      │
         HistoryDB   │      settings/trust/partial files                  │
                     └──────── app.py shutdown coordinator ◄──────────────┘
 ```
@@ -424,7 +433,7 @@ stack, so tray, close and toasts keep working everywhere:
 
 ## 12. Settings
 
-Stored as JSON in `%APPDATA%\virusShare\settings.json`
+Stored as JSON in `%LOCALAPPDATA%\virusShare\settings.json`
 (`core/config.py` — defaults merged, values validated, unknown keys
 preserved, atomic write):
 
@@ -453,12 +462,12 @@ preserved, atomic write):
 ## 13. Data locations
 
 ```
-%APPDATA%\virusShare\
+%LOCALAPPDATA%\virusShare\
 ├── settings.json          settings
 ├── identity.pem           long-lived ECDSA key (keep private!)
 ├── trust.json             device_id → certificate fingerprint
-├── history.db             SQLite (WAL)
-└── logs\virusShare.log rotating log
+├── data\history.db        SQLite (WAL)
+└── logs\virusShare.log    rotating log
 
 %USERPROFILE%\Downloads\virusShare\    default receive folder
 <receive root>\*.etherpartial(.json)      resumable partials, cleaned on commit
@@ -466,12 +475,18 @@ preserved, atomic write):
 
 On first launch the folders, identity and defaults are created automatically.
 
+- Older installs that stored everything in the roaming `%APPDATA%\virusShare`
+  are migrated once on startup (files are moved, then the old directory is
+  removed). `VIRUSSHARE_DATA_DIR` overrides the location entirely.
+- The bundled exe is `asInvoker`: it never requires administrator rights —
+  elevation is only requested by the installer (Program Files + HKLM).
+
 ---
 
 ## 14. Testing
 
 ```powershell
-python -m pytest -q          # 334 passed, 1 skipped (~55 s)
+python -m pytest -q          # 434 passed, 1 skipped (~100 s)
 ```
 
 | Module | Focus |
@@ -495,7 +510,10 @@ python -m pytest -q          # 334 passed, 1 skipped (~55 s)
 Notes:
 
 - `conftest.py` forces `QT_QPA_PLATFORM=offscreen` before any Qt import, so
-  the GUI tests run headless (CI-friendly).
+  the GUI tests run headless (CI-friendly). It also keeps Python's cyclic
+  GC out of Qt's event dispatch (disable for the session, collect between
+  tests) — without that guard the full suite can crash natively when a
+  collection destroys a live widget mid-notification.
 - Network tests use loopback with **monkeypatched peers** where a
   connect-to-dead-port test would be flaky (this host drops SYNs to closed
   ephemeral ports instead of refusing).
@@ -510,16 +528,40 @@ Notes:
 build_windows.bat
 ```
 
-runs `pip install -r requirements.txt` → `pytest -q` (refuses to package a
-broken build) → `python -m PyInstaller --clean --noconfirm virusShare.spec`
-→ `dist\virusShare.exe`.
+runs, in order:
 
-- Single-file, **windowed** (no console), no UPX, branded `virusShare.ico`
-  icon and Windows version resource (Product/FileDescription/`virusShare.exe`)
-  generated by `scripts/make_release_assets.py`.
+1. bootstrap `.venv` (`--system-site-packages`) and install
+   `requirements.txt` + `requirements-dev.txt` + `pyinstaller`;
+2. locate Inno Setup 6 (`ISCC.exe`, per-user or system install);
+3. clean `build\` and previous `dist\` outputs;
+4. **full test gate** — `pytest tests -q`; a failing suite aborts the build;
+5. `scripts\make_release_assets.py --force` (icon + version resource);
+6. `python -m PyInstaller --clean --noconfirm virusShare.spec`
+   → `dist\virusShare\virusShare.exe` + `_internal\`;
+7. verify the exe (`--version` must print `virusShare 1.0.0`);
+8. `ISCC installer\virusShare.iss` → `dist\virusShare-Setup.exe`
+   (size-checked).
+
+Artifacts:
+
+| Output | What it is |
+|---|---|
+| `dist\virusShare\virusShare.exe` | production app (onedir, **windowed**, branded icon + version resource, `asInvoker` manifest) |
+| `dist\virusShare-Setup.exe` | installer: Program Files, Start Menu, Add/Remove Programs, optional desktop icon, uninstaller |
+| `dist\virusShare.exe` (optional) | portable single file — `python -m PyInstaller --clean --noconfirm virusShare_onefile.spec` |
+
+Notes:
+
+- Assets (`resources\icons\virusShare.ico`, `resources\version_info.txt`)
+  are generated by `scripts/make_release_assets.py`; the spec calls it too,
+  so a fresh checkout builds without a manual step.
 - The spec excludes unused heavy Qt modules (WebEngine, Quick/Qml, Charts,
   Multimedia, …) to keep the bundle small; verified to boot headless
   (server binds, discovery starts, log written).
+- Install/uninstall have been verified end-to-end: silent install
+  (`/VERYSILENT`) registers the app and shortcuts, silent uninstall leaves
+  no files, registry keys or shortcuts behind (user data in
+  `%LOCALAPPDATA%\virusShare` is preserved).
 
 ---
 
@@ -535,15 +577,15 @@ broken build) → `python -m PyInstaller --clean --noconfirm virusShare.spec`
 | Corrupt settings | settings file is backed up and defaults restored on parse failure |
 | Checksum failure | partial is discarded (0 bytes) and the file re-sent; see log for the file id |
 
-Logs: `%APPDATA%\virusShare\logs\virusShare.log` (add `--verbose` for
+Logs: `%LOCALAPPDATA%\virusShare\logs\virusShare.log` (add `--verbose` for
 console DEBUG).
 
 ---
 
 ## 17. Known limitations
 
-- Windows-first: registry machine id, HKCU autostart, `%APPDATA%` paths;
-  other platforms run but without those conveniences.
+- Windows-first: registry machine id, HKCU autostart, `%LOCALAPPDATA%`
+  paths; other platforms run but without those conveniences.
 - IPv4 only; broadcast discovery needs a non-public (Private) network
   profile for Windows Firewall to allow it by default.
 - One transfer session per peer connection; multiple files per session.

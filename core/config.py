@@ -1,4 +1,4 @@
-"""virusShare - persistent settings (%APPDATA%\\virusShare\\settings.json)."""
+"""virusShare - persistent settings (%LOCALAPPDATA%\\virusShare\\settings.json)."""
 
 from __future__ import annotations
 

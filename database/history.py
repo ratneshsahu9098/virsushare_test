@@ -1,7 +1,7 @@
 """virusShare - SQLite transfer history.
 
 One row per finished transfer session.  The database lives at
-``%APPDATA%\\virusShare\\history.db`` (see ``core.constants.get_history_db_path``)
+``%LOCALAPPDATA%\\virusShare\\data\\history.db`` (see ``core.constants.get_history_db_path``)
 and is safe to access from worker threads: a single connection guarded by an
 RLock, with WAL not required (short, serialized transactions).
 """

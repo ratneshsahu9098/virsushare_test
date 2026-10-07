@@ -156,6 +156,8 @@ def test_migrate_legacy_data_dir(tmp_path, monkeypatch):
     old.mkdir(parents=True)
     (old / "settings.json").write_text("{}", encoding="utf-8")
     monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("VIRUSSHARE_DATA_DIR", raising=False)
 
     migrate_legacy_data_dir()
 
@@ -179,6 +181,8 @@ def test_migrate_legacy_data_dir_target_exists(tmp_path, monkeypatch):
     (old / "a.txt").write_text("old", encoding="utf-8")
     (new / "b.txt").write_text("new", encoding="utf-8")
     monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("VIRUSSHARE_DATA_DIR", raising=False)
 
     migrate_legacy_data_dir()  # must not raise or clobber
 
@@ -268,6 +272,8 @@ def test_migrate_legacy_data_dir_copy_fallback(tmp_path, monkeypatch, caplog):
     old.mkdir(parents=True)
     (old / "identity.pem").write_text("OLD-IDENTITY", encoding="utf-8")
     monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("VIRUSSHARE_DATA_DIR", raising=False)
 
     def failing_rename(self, target):
         raise PermissionError("locked by antivirus")
@@ -282,6 +288,68 @@ def test_migrate_legacy_data_dir_copy_fallback(tmp_path, monkeypatch, caplog):
         "legacy identity orphaned after rename failure (M29)"
     )
     assert (new / "identity.pem").read_text(encoding="utf-8") == "OLD-IDENTITY"
-    assert any("legacy" in r.message.lower() for r in caplog.records), (
+    assert any("rename failed" in r.message.lower() for r in caplog.records), (
         "rename failure was swallowed silently (M29)"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Phase 2 - %APPDATA% -> %LOCALAPPDATA% migration
+# --------------------------------------------------------------------------- #
+
+def test_migrate_roaming_data_dir(tmp_path, monkeypatch):
+    """The old roaming data dir is relocated once, and history.db ends up
+    in data/ where get_history_db_path() looks for it."""
+    from core.constants import (
+        APP_NAME,
+        get_app_data_dir,
+        get_history_db_path,
+        migrate_roaming_data_dir,
+    )
+
+    roaming = tmp_path / "Roaming"
+    local = tmp_path / "Local"
+    src = roaming / APP_NAME
+    src.mkdir(parents=True)
+    (src / "identity.pem").write_text("ID", encoding="utf-8")
+    (src / "history.db").write_text("db-bytes", encoding="utf-8")
+    monkeypatch.setenv("APPDATA", str(roaming))
+    monkeypatch.setenv("LOCALAPPDATA", str(local))
+    monkeypatch.delenv("VIRUSSHARE_DATA_DIR", raising=False)
+
+    migrate_roaming_data_dir()
+
+    dest = get_app_data_dir()
+    assert dest == local / APP_NAME, "data dir is not %LOCALAPPDATA%-based"
+    assert not src.exists(), "roaming source left behind"
+    assert (dest / "identity.pem").read_text(encoding="utf-8") == "ID"
+    assert get_history_db_path().read_text(encoding="utf-8") == "db-bytes", (
+        "history.db was not moved into data/"
+    )
+    assert not (dest / "history.db").exists()
+
+    # second run is a no-op
+    marker = dest / "keep.txt"
+    marker.write_text("x", encoding="utf-8")
+    migrate_roaming_data_dir()
+    assert marker.exists(), "second migration was not a no-op"
+
+
+def test_migrate_roaming_data_dir_same_path_is_noop(tmp_path, monkeypatch):
+    """When APPDATA and LOCALAPPDATA coincide (or the target already exists)
+    the migration must not touch anything."""
+    from core.constants import APP_NAME, get_app_data_dir, migrate_roaming_data_dir
+
+    base = tmp_path / "both"
+    existing = base / APP_NAME
+    existing.mkdir(parents=True)
+    (existing / "settings.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("APPDATA", str(base))
+    monkeypatch.setenv("LOCALAPPDATA", str(base))
+    monkeypatch.delenv("VIRUSSHARE_DATA_DIR", raising=False)
+
+    migrate_roaming_data_dir()
+
+    assert get_app_data_dir() == existing
+    assert (existing / "settings.json").exists(), "existing data was disturbed"
+    assert existing.is_dir()

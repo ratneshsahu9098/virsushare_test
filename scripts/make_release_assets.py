@@ -1,9 +1,11 @@
 """Generate the release assets consumed by ``virusShare.spec``.
 
-* ``assets/virusShare.ico``  - multi-resolution Windows icon rendered from
-  ``gui.icons.write_ico`` (the same artwork the window/tray use at runtime).
-* ``assets/version_info.txt``  - ``VSVersionInfo`` text for the exe's
-  Properties → Details resource, derived from ``core.constants.APP_VERSION``.
+* ``resources/icons/virusShare.ico``  - multi-resolution Windows icon rendered
+  from ``gui.icons.write_ico`` (the same artwork the window/tray use at
+  runtime): 16/24/32/48/64/128/256 px.
+* ``resources/version_info.txt``      - ``VSVersionInfo`` text for the exe's
+  Properties → Details resource, derived from ``core.constants.APP_VERSION``
+  and reused by the Inno Setup installer.
 
 The spec file calls :func:`ensure_assets` before building, so a fresh clone
 always produces a branded exe.  Run this module directly to refresh:
@@ -21,8 +23,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-ICO_FILE = ROOT / "assets" / "virusShare.ico"
-VERSION_FILE = ROOT / "assets" / "version_info.txt"
+ICO_FILE = ROOT / "resources" / "icons" / "virusShare.ico"
+VERSION_FILE = ROOT / "resources" / "version_info.txt"
+
+#: Windows Explorer's "Copyright" field; a fixed year keeps the generated
+#: version file stable between builds.
+COPYRIGHT = "Copyright (c) 2026 virusShare"
 
 
 def version_tuple(version: str) -> tuple:
@@ -47,6 +53,7 @@ def render_version_info() -> str:
     from core.constants import APP_AUTHOR, APP_NAME, APP_VERSION
 
     filevers = version_tuple(APP_VERSION)
+    dotted = ".".join(str(part) for part in filevers)  # "1.0.0.0"
     info = VSVersionInfo(
         ffi=FixedFileInfo(
             filevers=filevers,
@@ -67,15 +74,14 @@ def render_version_info() -> str:
                             StringStruct("CompanyName", APP_AUTHOR),
                             StringStruct(
                                 "FileDescription",
-                                f"{APP_NAME} - peer-to-peer LAN file transfer",
+                                "Secure Windows File Sharing Application",
                             ),
-                            StringStruct("FileVersion", APP_VERSION),
+                            StringStruct("FileVersion", dotted),
                             StringStruct("InternalName", APP_NAME),
                             StringStruct("OriginalFilename", f"{APP_NAME}.exe"),
                             StringStruct("ProductName", APP_NAME),
-                            StringStruct("ProductVersion", APP_VERSION),
-                            StringStruct("LegalCopyright",
-                                         f"Copyright (c) {APP_AUTHOR}"),
+                            StringStruct("ProductVersion", dotted),
+                            StringStruct("LegalCopyright", COPYRIGHT),
                         ],
                     )
                 ]

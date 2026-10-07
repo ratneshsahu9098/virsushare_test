@@ -3,6 +3,45 @@
 All notable changes to virusShare are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Windows installer: Inno Setup script (`installer/virusShare.iss`) produces
+  `dist\virusShare-Setup.exe` — installs to Program Files, Start Menu
+  shortcut, Add/Remove Programs entry, optional desktop icon, per-machine
+  app id; uninstall removes the program and leaves user data alone.
+- Portable single-file build kept as an optional target
+  (`virusShare_onefile.spec` → `dist\virusShare.exe`).
+
+### Changed
+
+- Packaging switched from single-file to **onedir** (`virusShare.spec` →
+  `dist\virusShare\virusShare.exe` + `_internal\`): instant start-up, and
+  the layout the installer packages.
+- Data directory moved from `%APPDATA%\virusShare` (roaming) to
+  `%LOCALAPPDATA%\virusShare` (local): settings, identity, trust store,
+  `data\history.db` and `logs\`. One-time migration runs on startup
+  (`migrate_legacy_data_dir` / `migrate_roaming_data_dir`); override with
+  `VIRUSSHARE_DATA_DIR`.
+- Build assets relocated: `assets/virusShare.ico` →
+  `resources/icons/virusShare.ico`, `assets/version_info.txt` →
+  `resources/version_info.txt`.
+- Windows version resource now uses dotted four-part versions
+  (File/Product `1.0.0.0`) with correct FileDescription/CompanyName/
+  OriginalFilename/Copyright.
+- `build_windows.bat` rewritten: venv bootstrap, dependency install,
+  clean, full test gate, asset generation, PyInstaller, `--version`
+  verification, Inno Setup compile and output-size check.
+
+### Fixed
+
+- Full test-suite native crash in `QCoreApplication::notifyInternal2`:
+  Python's cyclic GC could destroy live Qt windows (and their armed
+  timers) while Qt was dispatching an event — a use-after-free. The
+  collector is now suspended around `app.exec()`/shutdown (`app.py`) and
+  between tests (`conftest.py`), with explicit collections at safe points.
+
 ## [1.0.0] - 2026-09-29
 
 First complete release.

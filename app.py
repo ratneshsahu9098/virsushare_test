@@ -14,12 +14,17 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import gc
 import logging
 import os
 import platform
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    # Type-only: gui.bridge pulls in Qt, which must stay a lazy import.
+    from gui.bridge import ThreadBridge
 
 from core.constants import (
     APP_NAME,
@@ -64,7 +69,7 @@ def _report_already_running() -> None:
     try:
         from PySide6.QtWidgets import QApplication, QMessageBox
 
-        qapp = QApplication.instance() or QApplication(sys.argv[:1])
+        QApplication.instance() or QApplication(sys.argv[:1])
         QMessageBox.information(None, APP_NAME, message)
     except Exception:  # noqa: BLE001
         log.exception("already-running dialog failed")
@@ -314,7 +319,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     def local_device() -> DeviceInfo:
         caps = ["file_transfer", "resume", "checksum", "pairing"]
         try:
-            import cryptography  # noqa: F401
+            __import__("cryptography")
 
             if settings.get("enable_encryption", True):
                 caps.append("encryption")
@@ -410,6 +415,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     discovery = None
     window = None
 
+    # Qt objects form reference cycles; a cyclic collection that lands while
+    # Qt dispatches events destroys live widgets (and their armed timers)
+    # mid-notification, and the dispatcher then reads freed objects - a
+    # use-after-free crash in QCoreApplication::notifyInternal2.  Suspend the
+    # automatic collector for everything that can pump events (exec(), the
+    # shutdown pump) and collect explicitly once it is safe.
+    gc_was_enabled = gc.isenabled()
+    gc.collect()
+    gc.disable()
+
     shutdown = make_shutdown(
         bridge=bridge,
         manager=manager,
@@ -493,7 +508,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         log.exception("startup failed")
         return 1
     finally:
-        shutdown()
+        try:
+            shutdown()
+        finally:
+            if gc_was_enabled:
+                gc.enable()
+            gc.collect()
 
 
 if __name__ == "__main__":

@@ -1,20 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""virusShare - production build (onedir) -> installer input.
+"""virusShare - portable build (onefile) -> single exe.
 
 Build from the repository root:
 
-    python -m PyInstaller --clean --noconfirm virusShare.spec
+    python -m PyInstaller --clean --noconfirm virusShare_onefile.spec
 
-Produces:
-
-    dist\\virusShare\\virusShare.exe     branded GUI exe (no console window)
-    dist\\virusShare\\_internal\\...     code, PySide6, resources
-
-This is the layout the Inno Setup script (``installer/virusShare.iss``)
-packages into ``virusShare-Setup.exe``: start-up is instant and no file is
-ever self-extracted at launch.
-
-Portable single-file variant: ``virusShare_onefile.spec``.
+Produces ``dist\\virusShare.exe``: a self-contained archive that unpacks to a
+temp directory on start (slower start-up than the onedir build).  Kept as an
+optional extra - the supported distribution remains the onedir build plus
+the installer.  User data still lives in ``%LOCALAPPDATA%\\virusShare`` and is
+never written next to (or inside) the archive.
 """
 
 import os
@@ -38,14 +33,16 @@ pyz = PYZ(a.pure)  # noqa: F821
 exe = EXE(  # noqa: F821
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    exclude_binaries=True,   # binaries go to _internal/ via COLLECT below
     name="virusShare",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     upx_exclude=[],
+    runtime_tmpdir=None,     # unpack to the system temp dir
     console=False,           # windowed app: no console window
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -54,14 +51,4 @@ exe = EXE(  # noqa: F821
     entitlements_file=None,
     icon=ICON_FILE,
     version=VERSION_FILE,
-)
-
-coll = COLLECT(  # noqa: F821
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name="virusShare",       # -> dist/virusShare/
 )

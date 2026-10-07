@@ -1,6 +1,6 @@
 """virusShare - file logging setup.
 
-Log file: %APPDATA%\\virusShare\\logs\\virusShare.log
+Log file: %LOCALAPPDATA%\\virusShare\\logs\\virusShare.log
 
 Never logs passwords, private keys, file contents or pairing codes; callers
 are responsible for not passing secrets into log records (see README).

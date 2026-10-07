@@ -14,9 +14,9 @@ import socket
 import threading
 from typing import Callable, List, Optional, Set, Tuple
 
-from core.constants import CONNECTION_TIMEOUT, TRANSFER_PORT
+from core.constants import TRANSFER_PORT
 from core.security import Identity, TrustStore
-from network.protocol import DeviceInfo, ProtocolError, recv_message
+from network.protocol import DeviceInfo, ProtocolError
 from network.session import (
     ApproveCallback,
     ConnectionRejected,
@@ -29,6 +29,24 @@ from network.session import (
 log = logging.getLogger(__name__)
 
 SessionHandler = Callable[[ConnectionSession], None]
+
+
+def _wake_accept(listener: socket.socket) -> None:
+    """Make a blocked ``accept()`` on ``listener`` return, without closing it.
+
+    A loopback connection is queued in the backlog and wakes the accept
+    loop; the caller has already flipped ``_running`` to ``False``, so the
+    loop discards the connection and exits.  If the loop is already gone
+    the connect fails (ECONNREFUSED) and that is not an error.
+    """
+    try:
+        host, port = listener.getsockname()[:2]
+        if host in ("", "0.0.0.0"):
+            host = "127.0.0.1"
+        wake = socket.create_connection((host, port), timeout=1.0)
+        wake.close()
+    except OSError:
+        pass
 
 
 class TransferServer:
@@ -111,26 +129,57 @@ class TransferServer:
         return self.bound_port
 
     def stop(self) -> None:
+        """Stop accepting, wind down connections, then release the sockets.
+
+        The order matters: threads must be woken and joined *before* the
+        sockets they are parked in get closed.  ``closesocket()`` while
+        another thread sits inside ``accept()``/``recv()`` is undefined
+        behaviour on Windows and has produced the native access violation
+        recorded in crash1.txt (accept thread vs. shutdown thread).
+        """
         self._running = False
+        listener = self._listener
+        accept_thread = self._accept_thread
+
+        # 1. Wake the accept loop without closing the listener: a loopback
+        #    connect makes the blocked accept() return immediately.  If the
+        #    loop already exited, the connect fails and there is nothing to
+        #    wake - both cases are fine.
+        if accept_thread is not None and accept_thread is not threading.current_thread():
+            if listener is not None:
+                _wake_accept(listener)
+            accept_thread.join(timeout=3.0)
+            if accept_thread.is_alive():
+                log.warning("accept loop did not exit within 3s")
+
+        # 2. Wake per-connection threads with shutdown() (never close()):
+        #    it makes a blocking recv() return promptly and is safe to call
+        #    concurrently with a reader on the same socket.
         with self._lock:
             sockets = list(self._sockets)
+        for sock in sockets:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        for thread in list(self._conn_threads):
+            if thread is not threading.current_thread():
+                thread.join(timeout=3.0)
+
+        # 3. Nothing is inside the sockets any more - now it is safe to
+        #    close them and drop the listener reference.
+        if listener is not None:
+            try:
+                listener.close()
+            except OSError:
+                pass
+        if self._listener is listener:
+            self._listener = None
         for sock in sockets:
             try:
                 sock.close()
             except OSError:
                 pass
-        if self._listener is not None:
-            try:
-                self._listener.close()
-            except OSError:
-                pass
-            self._listener = None
-        accept_thread = self._accept_thread
-        if accept_thread is not None and accept_thread is not threading.current_thread():
-            accept_thread.join(timeout=3.0)
-        for thread in list(self._conn_threads):
-            if thread is not threading.current_thread():
-                thread.join(timeout=3.0)
         with self._lock:
             for thread in list(self._conn_threads):
                 if not thread.is_alive():

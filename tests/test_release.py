@@ -12,8 +12,8 @@ import pytest
 from core.constants import APP_NAME, APP_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
-ICON_PATH = ROOT / "assets" / "virusShare.ico"
-VERSION_PATH = ROOT / "assets" / "version_info.txt"
+ICON_PATH = ROOT / "resources" / "icons" / "virusShare.ico"
+VERSION_PATH = ROOT / "resources" / "version_info.txt"
 
 
 def _parse_ico(data: bytes):
@@ -74,8 +74,14 @@ def test_committed_version_info_loads():
     info = load_version_info_from_text_file(str(VERSION_PATH))
     assert isinstance(info, VSVersionInfo)
     text = VERSION_PATH.read_text(encoding="utf-8")
-    assert f"StringStruct('FileVersion', '{APP_VERSION}')" in text
+    dotted = ".".join(str(p) for p in (APP_VERSION.split(".") + ["0", "0"])[:4])
+    assert f"StringStruct('FileVersion', '{dotted}')" in text
+    assert f"StringStruct('ProductVersion', '{dotted}')" in text
     assert f"StringStruct('ProductName', '{APP_NAME}')" in text
+    assert "Secure Windows File Sharing Application" in text, (
+        "FileDescription must match the release metadata (Phase 5)"
+    )
+    assert "OriginalFilename', 'virusShare.exe'" in text
 
 
 def test_ensure_assets_is_idempotent(tmp_path, monkeypatch):
@@ -187,6 +193,8 @@ def test_app_exits_cleanly_when_transfer_port_is_taken(tmp_path):
     port = blocker.getsockname()[1]
     env = os.environ.copy()
     env["APPDATA"] = str(tmp_path)
+    env["LOCALAPPDATA"] = str(tmp_path)
+    env.pop("VIRUSSHARE_DATA_DIR", None)
     env["QT_QPA_PLATFORM"] = "offscreen"
     try:
         proc = subprocess.run(
@@ -234,6 +242,8 @@ def test_second_instance_bows_out(tmp_path):
     the already-running message and exits 1 without starting the server."""
     env = os.environ.copy()
     env["APPDATA"] = str(tmp_path)
+    env["LOCALAPPDATA"] = str(tmp_path)
+    env.pop("VIRUSSHARE_DATA_DIR", None)
     env["QT_QPA_PLATFORM"] = "offscreen"
     holder_script = (
         "import time\n"
@@ -362,6 +372,8 @@ def test_bad_port_flag_exits_without_traceback(tmp_path):
     instead of an uncaught SettingsError traceback."""
     env = os.environ.copy()
     env["APPDATA"] = str(tmp_path)
+    env["LOCALAPPDATA"] = str(tmp_path)
+    env.pop("VIRUSSHARE_DATA_DIR", None)
     env["QT_QPA_PLATFORM"] = "offscreen"
     proc = subprocess.run(
         [
