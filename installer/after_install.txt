@@ -1,0 +1,22 @@
+virusShare installed
+====================
+
+Launch: Start Menu -> virusShare (or the optional desktop shortcut).
+The application runs as your user - it does NOT require administrator
+rights, Python, or any other software on this PC.
+
+First launch
+------------
+- Creates %LOCALAPPDATA%\virusShare\ (settings, identity, history, logs)
+- Allow virusShare on Private networks in the Windows Firewall prompt so
+  UDP 54321 (discovery) and TCP 54322 (transfers) work on your LAN.
+
+Send / receive
+--------------
+1. Start virusShare on both PCs (same LAN, Private profile).
+2. Sender: SEND FILES.  Receiver: RECEIVE FILES.
+3. Approve the 6-digit pairing code once - devices are then trusted.
+
+Logs: %LOCALAPPDATA%\virusShare\logs\virusShare.log
+Uninstall: Settings -> Apps -> virusShare -> Uninstall
+           (your settings, identity and history are kept)

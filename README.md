@@ -62,12 +62,30 @@ Useful flags:
 python -m pytest -q          # 434 passed, 1 skipped (~100 s)
 ```
 
+### Development commands
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt -r requirements-dev.txt
+
+python -m pytest            # tests
+python app.py               # run the app
+```
+
 ### Build the Windows app + installer
 
 ```powershell
 build_windows.bat
 # -> dist\virusShare\virusShare.exe     app (onedir, no console window)
-# -> dist\virusShare-Setup.exe          installer (Inno Setup)
+# -> dist\installer\virusShare-Setup.exe  installer (Inno Setup)
+```
+
+Manual build (same steps as the script, without the gates):
+
+```powershell
+pyinstaller --clean --noconfirm virusShare.spec
+ISCC installer\virusShare.iss
 ```
 
 Requires Python 3.10+ and [Inno Setup 6](https://jrsoftware.org/isinfo.php)
@@ -170,7 +188,7 @@ virusShare/                  repository root (run pytest here)
 ├── scripts/make_release_assets.py  icon/version-resource generator
 ├── utils/                   logger, network info, Windows helpers, formatting
 ├── tests/                   15 test modules, 435 tests
-├── installer/virusShare.iss Inno Setup script → dist\virusShare-Setup.exe
+├── installer/virusShare.iss Inno Setup script → dist\installer\virusShare-Setup.exe
 ├── virusShare.spec       PyInstaller production build (onedir)
 ├── virusShare_onefile.spec  portable single-file build (optional)
 ├── build_windows.bat        venv → deps → test gate → exe → installer
@@ -539,7 +557,7 @@ runs, in order:
 6. `python -m PyInstaller --clean --noconfirm virusShare.spec`
    → `dist\virusShare\virusShare.exe` + `_internal\`;
 7. verify the exe (`--version` must print `virusShare 1.0.0`);
-8. `ISCC installer\virusShare.iss` → `dist\virusShare-Setup.exe`
+8. `ISCC installer\virusShare.iss` → `dist\installer\virusShare-Setup.exe`
    (size-checked).
 
 Artifacts:
@@ -547,7 +565,7 @@ Artifacts:
 | Output | What it is |
 |---|---|
 | `dist\virusShare\virusShare.exe` | production app (onedir, **windowed**, branded icon + version resource, `asInvoker` manifest) |
-| `dist\virusShare-Setup.exe` | installer: Program Files, Start Menu, Add/Remove Programs, optional desktop icon, uninstaller |
+| `dist\installer\virusShare-Setup.exe` | installer: Program Files, Start Menu, Add/Remove Programs, optional desktop icon, uninstaller |
 | `dist\virusShare.exe` (optional) | portable single file — `python -m PyInstaller --clean --noconfirm virusShare_onefile.spec` |
 
 Notes:
@@ -562,6 +580,31 @@ Notes:
   (`/VERYSILENT`) registers the app and shortcuts, silent uninstall leaves
   no files, registry keys or shortcuts behind (user data in
   `%LOCALAPPDATA%\virusShare` is preserved).
+
+### Clean-PC verification procedure (no Python required)
+
+The target machine must be a plain Windows 10/11 PC (no Python, pip, Git,
+VS Code or build tools). Verify on such a machine:
+
+1. Copy `dist\installer\virusShare-Setup.exe` over (USB/network share).
+2. Double-click it → accept the UAC prompt → install (default
+   `C:\Program Files\virusShare`, optional desktop shortcut).
+3. Launch from the Start Menu → window opens, no DLL/module errors,
+   `C:\Program Files\virusShare\_internal\python310.dll` proves the Python
+   runtime ships inside the bundle (system Python is never used).
+4. First run creates `%LOCALAPPDATA%\virusShare\` (settings, identity,
+   logs); allow the Firewall prompt on Private networks.
+5. Two-PC smoke: Send/Receive → pairing code → transfer completes;
+   history shows the session; pause/resume works.
+6. Close the app (clean exit, no crash dialog), relaunch — settings and
+   identity persist.
+7. Uninstall via Settings → Apps → virusShare → Uninstall: program files
+   and shortcuts removed, `%LOCALAPPDATA%\virusShare` intentionally kept.
+
+On the build machine the same exe is smoke-tested after every build
+(`--version`, launch, port listening, data dir, clean close) and the test
+suite must pass 3× before packaging (the build script runs it once and
+fails the build on any error).
 
 ---
 
@@ -591,4 +634,3 @@ console DEBUG).
 - One transfer session per peer connection; multiple files per session.
 - Directory listings in history are session-level (no per-file history rows).
 - No code signing (Windows SmartScreen warns until the exe is signed).
-# VIRUSSHARE

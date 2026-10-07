@@ -6,7 +6,7 @@
 ;     ISCC.exe installer\virusShare.iss
 ;
 ; Input : dist\virusShare\*            (PyInstaller onedir build, virusShare.spec)
-; Output: dist\virusShare-Setup.exe
+; Output: dist\installer\virusShare-Setup.exe
 ;
 ; Version strings default to core/constants.py (APP_VERSION = 1.0.0) and may be
 ; overridden from the command line:
@@ -19,7 +19,7 @@
 #endif
 #define MyAppVersionFull "1.0.0.0"
 #define MyAppPublisher "virusShare"
-#define MyAppURL "https://github.com/ratneshsahu9098/VIRUSSHARE"
+#define MyAppURL "https://github.com/ratneshsahu9098/virsushare_test"
 #define MyAppExeName "virusShare.exe"
 
 [Setup]
@@ -34,7 +34,7 @@ AppUpdatesURL={#MyAppURL}/releases
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-InfoAfterFile=..\README.md
+InfoAfterFile=after_install.txt
 
 ; The *installer* elevates (per-machine install into Program Files); the
 ; application itself carries an asInvoker manifest and never needs admin.
@@ -54,7 +54,7 @@ VersionInfoCompany={#MyAppPublisher}
 VersionInfoProductName={#MyAppName}
 
 ; Output
-OutputDir=..\dist
+OutputDir=..\dist\installer
 OutputBaseFilename=virusShare-Setup
 SetupIconFile=..\resources\icons\virusShare.ico
 UninstallFilesDir={app}

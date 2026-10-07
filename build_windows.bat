@@ -11,7 +11,7 @@ rem   3. test gate      full pytest suite - a broken tree is never packaged
 rem   4. assets         icon + version resource (idempotent)
 rem   5. exe            PyInstaller onedir  -> dist\virusShare\virusShare.exe
 rem   6. verify exe     --version + smoke launch
-rem   7. installer      Inno Setup           -> dist\virusShare-Setup.exe
+rem   7. installer      Inno Setup           -> dist\installer\virusShare-Setup.exe
 rem   8. verify setup   file exists, non-trivial size
 rem ------------------------------------------------------------------ #
 
@@ -20,7 +20,7 @@ echo === virusShare release build ===
 set "VENV=.venv"
 set "PY=%VENV%\Scripts\python.exe"
 set "EXE=dist\virusShare\virusShare.exe"
-set "SETUP=dist\virusShare-Setup.exe"
+set "SETUP=dist\installer\virusShare-Setup.exe"
 
 rem ------------------------------ preflight ------------------------------ #
 where python >nul 2>nul
@@ -38,6 +38,12 @@ if not exist "%PY%" (
     )
 ) else (
     echo [1/8] Reusing existing virtual environment %VENV%.
+)
+
+"%PY%" -m pip install --quiet --disable-pip-version-check --upgrade pip
+if errorlevel 1 (
+    echo [error] pip upgrade failed.
+    exit /b 1
 )
 
 "%PY%" -m pip install --quiet --disable-pip-version-check -r requirements.txt -r requirements-dev.txt pyinstaller
@@ -62,6 +68,7 @@ rem -------------------------------- clean -------------------------------- #
 echo [2/8] Cleaning previous build output...
 if exist build rmdir /s /q build
 if exist dist\virusShare rmdir /s /q dist\virusShare
+if exist dist\installer rmdir /s /q dist\installer
 if exist dist\virusShare-Setup.exe del /q dist\virusShare-Setup.exe
 if exist dist\virusShare.exe del /q dist\virusShare.exe
 
